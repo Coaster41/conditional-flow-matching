@@ -57,6 +57,7 @@ def warmup_lr(step):
 
 
 def train(argv):
+    print(device)
     print(
         "lr, total_steps, ema decay, save_step:",
         FLAGS.lr,
