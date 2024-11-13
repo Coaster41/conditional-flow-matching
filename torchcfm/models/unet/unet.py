@@ -619,7 +619,10 @@ class UNetModel(nn.Module):
 
         if self.num_classes is not None:
             assert y.shape == (x.shape[0],)
-            emb = emb + self.label_emb(y)
+            filter = y < self.num_classes
+            y *= filter
+            # print(y.shape, self.label_emb(y).shape)
+            emb = emb + self.label_emb(y)*(filter.unsqueeze(-1))
 
         h = x.type(self.dtype)
         for module in self.input_blocks:
