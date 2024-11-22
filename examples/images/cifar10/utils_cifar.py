@@ -87,3 +87,8 @@ def infiniteloop(dataloader):
     while True:
         for x, y in iter(dataloader):
             yield x
+
+def infiniteloop_y(dataloader):
+    while True:
+        for x, y in iter(dataloader):
+            yield x, y

@@ -331,6 +331,19 @@ class QKVAttentionLegacy(nn.Module):
     @staticmethod
     def count_flops(model, _x, y):
         return count_flops_attn(model, _x, y)
+    
+class SemiSupervisedEmbedding(nn.Module):
+    def __init__(self, num_classes, time_embed_dim):
+        super().__init__()
+        self.num_classes = num_classes
+        self.embedding = nn.Embedding(num_classes, time_embed_dim)
+    
+    def forward(self, labels):
+        filter = labels >= self.num_classes
+        labels[filter] = 0
+        embed = self.embedding(labels)
+        embed[filter] = 0
+        return embed
 
 
 class QKVAttention(nn.Module):
@@ -446,7 +459,7 @@ class UNetModel(nn.Module):
         )
 
         if self.num_classes is not None:
-            self.label_emb = nn.Embedding(num_classes, time_embed_dim)
+            self.label_emb = SemiSupervisedEmbedding(num_classes, time_embed_dim)
 
         ch = input_ch = int(channel_mult[0] * model_channels)
         self.input_blocks = nn.ModuleList(
@@ -619,10 +632,7 @@ class UNetModel(nn.Module):
 
         if self.num_classes is not None:
             assert y.shape == (x.shape[0],)
-            filter = y < self.num_classes
-            y *= filter
-            # print(y.shape, self.label_emb(y).shape)
-            emb = emb + self.label_emb(y)*(filter.unsqueeze(-1))
+            emb = emb + self.label_emb(y)
 
         h = x.type(self.dtype)
         for module in self.input_blocks:
