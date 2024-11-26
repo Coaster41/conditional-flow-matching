@@ -4,6 +4,7 @@ import os
 import torch
 from torch import distributed as dist
 from torchdyn.core import NeuralODE
+import torchdiffeq
 
 # from torchvision.transforms import ToPILImage
 from torchvision.utils import make_grid, save_image
@@ -70,6 +71,50 @@ def generate_samples(model, parallel, savedir, step, net_="normal"):
         traj = traj[-1, :].view([-1, 3, 32, 32]).clip(-1, 1)
         traj = traj / 2 + 0.5
     save_image(traj, savedir + f"{net_}_generated_FM_images_step_{step}.png", nrow=8)
+
+    model.train()
+
+
+def generate_class_samples(model, parallel, savedir, step, net_="normal", num_classes=10):
+    """Save 100 generated images (10 x 10) for sanity check along training.
+
+    Parameters
+    ----------
+    model:
+        represents the neural network that we want to generate samples from
+    parallel: bool
+        represents the parallel training flag. Torchdyn only runs on 1 GPU, we need to send the models from several GPUs to 1 GPU.
+    savedir: str
+        represents the path where we want to save the generated images
+    step: int
+        represents the current step of training
+    """
+    model.eval()
+
+    model_ = copy.deepcopy(model)
+    if parallel:
+        # Send the models from GPU to CPU for inference with NeuralODE from Torchdyn
+        model_ = model_.module.to(device)
+
+    
+    generated_class_list = torch.arange(num_classes, device=device).repeat(10)
+    # node_ = NeuralODE(model_, solver="euler", sensitivity="adjoint")
+    with torch.no_grad():
+        traj = torchdiffeq.odeint(
+            lambda t, x: model.forward(t, x, generated_class_list),
+            torch.randn(100, 3, 32, 32, device=device),
+            torch.linspace(0, 1, 2, device=device),
+            atol=1e-4,
+            rtol=1e-4,
+            method="dopri5",
+        )
+        # traj = node_.trajectory(
+        #     torch.randn(100, 3, 32, 32, device=device),
+        #     t_span=torch.linspace(0, 1, 100, device=device),
+        # )
+        traj = traj[-1, :].view([-1, 3, 32, 32]).clip(-1, 1)
+        traj = traj / 2 + 0.5
+    save_image(traj, savedir + f"{net_}_generated_FM_images_step_{step}.png", nrow=10)
 
     model.train()
 

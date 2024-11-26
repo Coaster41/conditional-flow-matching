@@ -6,13 +6,16 @@
 import copy
 import os
 
+import sys
+sys.path.append('../../..')
+
 import torch
 import numpy as np
 from absl import app, flags
 from torchdyn.core import NeuralODE
 from torchvision import datasets, transforms
 from tqdm import trange
-from utils_cifar import ema, generate_samples, infiniteloop_y
+from utils_cifar import ema, generate_class_samples, infiniteloop_y
 
 from torchcfm.conditional_flow_matching import (
     ConditionalFlowMatcher,
@@ -166,8 +169,8 @@ def train(argv):
 
             # sample and Saving the weights
             if FLAGS.save_step > 0 and step % FLAGS.save_step == 0:
-                generate_samples(net_model, FLAGS.parallel, savedir, step, net_="normal")
-                generate_samples(ema_model, FLAGS.parallel, savedir, step, net_="ema")
+                generate_class_samples(net_model, FLAGS.parallel, savedir, step, net_="normal")
+                generate_class_samples(ema_model, FLAGS.parallel, savedir, step, net_="ema")
                 torch.save(
                     {
                         "net_model": net_model.state_dict(),
