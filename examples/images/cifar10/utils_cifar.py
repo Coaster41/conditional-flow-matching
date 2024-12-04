@@ -118,6 +118,94 @@ def generate_class_samples(model, parallel, savedir, step, net_="normal", num_cl
 
     model.train()
 
+def generate_mnist_class_samples(model, parallel, savedir, step, net_="normal", num_classes=10):
+    """Save 100 generated images (10 x 10) for sanity check along training.
+
+    Parameters
+    ----------
+    model:
+        represents the neural network that we want to generate samples from
+    parallel: bool
+        represents the parallel training flag. Torchdyn only runs on 1 GPU, we need to send the models from several GPUs to 1 GPU.
+    savedir: str
+        represents the path where we want to save the generated images
+    step: int
+        represents the current step of training
+    """
+    model.eval()
+
+    model_ = copy.deepcopy(model)
+    if parallel:
+        # Send the models from GPU to CPU for inference with NeuralODE from Torchdyn
+        model_ = model_.module.to(device)
+
+    
+    generated_class_list = torch.arange(num_classes, device=device).repeat(10)
+    # node_ = NeuralODE(model_, solver="euler", sensitivity="adjoint")
+    with torch.no_grad():
+        traj = torchdiffeq.odeint(
+            lambda t, x: model.forward(t, x, generated_class_list),
+            torch.randn(100, 1, 28, 28, device=device),
+            torch.linspace(0, 1, 2, device=device),
+            atol=1e-4,
+            rtol=1e-4,
+            method="dopri5",
+        )
+        # traj = node_.trajectory(
+        #     torch.randn(100, 3, 32, 32, device=device),
+        #     t_span=torch.linspace(0, 1, 100, device=device),
+        # )
+        traj = traj[-1, :].view([-1, 1, 28, 28]).clip(-1, 1)
+        traj = traj / 2 + 0.5
+    save_image(traj, savedir + f"{net_}_generated_FM_images_step_{step}.png", nrow=10)
+
+    model.train()
+
+
+def generate_mnist_class_images(model, savedir, net_="normal", class_to_gen=0, num_images=100, start_num=0):
+    """Save 100 generated images (10 x 10) for sanity check along training.
+
+    Parameters
+    ----------
+    model:
+        represents the neural network that we want to generate images from
+    savedir: str
+        represents the path where we want to save the generated images
+    """
+    model.eval()
+
+    
+    class_list = torch.ones(num_images, device=device, dtype=torch.long) * class_to_gen
+    # generated_class_list = torch.arange(num_classes, device=device).repeat(10)
+    # node_ = NeuralODE(model_, solver="euler", sensitivity="adjoint")
+    with torch.no_grad():
+        traj = torchdiffeq.odeint(
+            lambda t, x: model.forward(t, x, class_list),
+            torch.randn(num_images, 1, 28, 28, device=device),
+            torch.linspace(0, 1, 2, device=device),
+            atol=1e-4,
+            rtol=1e-4,
+            method="dopri5",
+        )
+        # traj = node_.trajectory(
+        #     torch.randn(100, 3, 32, 32, device=device),
+        #     t_span=torch.linspace(0, 1, 100, device=device),
+        # )
+        # traj = traj[-1, :].view([-1, 3, 32, 32]).clip(-1, 1)
+        # traj = traj / 2 + 0.5
+        traj = traj[-1, :]  # .view([-1, 3, 32, 32]).clip(-1, 1)
+        img = traj / 2 + 0.5
+        # img = (traj * 127.5 + 128).clip(0, 255).to(torch.uint8)
+    
+    os.makedirs(savedir + f"{net_}/{class_to_gen}", exist_ok=True)
+    for i in range(img.size(0)):
+        save_image(img[i, :, :, :], savedir + f"{net_}/{class_to_gen}/image_{i+start_num}.png")
+    # save_image(traj, savedir + f"{net_}_generated_FM_images.png", nrow=10)
+
+    model.train()
+
+
+
 def generate_class_images(model, savedir, net_="normal", class_to_gen=0, num_images=100, start_num=0):
     """Save 100 generated images (10 x 10) for sanity check along training.
 

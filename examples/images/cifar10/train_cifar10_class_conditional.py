@@ -15,7 +15,7 @@ from absl import app, flags
 from torchdyn.core import NeuralODE
 from torchvision import datasets, transforms
 from tqdm import trange
-from utils_cifar import ema, generate_class_samples, infiniteloop_y
+from utils_cifar import ema, generate_class_samples, infiniteloop_y, generate_mnist_class_samples
 
 from torchcfm.conditional_flow_matching import (
     ConditionalFlowMatcher,
@@ -59,16 +59,17 @@ use_cuda = torch.cuda.is_available()
 device = torch.device("cuda" if use_cuda else "cpu")
 
 class SemiSupervisedDataset(torch.utils.data.Dataset):
-    def __init__(self, dataset, p):
+    def __init__(self, dataset, p, num_classes):
         self._dataset = dataset
-        self.labels_filter = (torch.rand(len(dataset)) < p).int()
+        self.labels_filter = torch.rand(len(dataset)) < p
+        self.num_classes = num_classes
 
     def __len__(self):
         return len(self._dataset)
 
     def __getitem__(self, idx):
         item = self._dataset[idx]
-        return (item[0], item[1]*self.labels_filter[idx], idx)
+        return item[0], self.num_classes if self.labels_filter[idx] else item[1]
 
 
 def warmup_lr(step):
@@ -106,7 +107,7 @@ def train(argv):
             download=True,
             transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))]),
         )
-    dataset = SemiSupervisedDataset(dataset, FLAGS.p_unlabeled)
+    dataset = SemiSupervisedDataset(dataset, FLAGS.p_unlabeled, FLAGS.num_classes)
     dataloader = torch.utils.data.DataLoader(
         dataset,
         batch_size=FLAGS.batch_size,
@@ -196,8 +197,13 @@ def train(argv):
 
             # sample and Saving the weights
             if FLAGS.save_step > 0 and step % FLAGS.save_step == 0:
-                generate_class_samples(net_model, FLAGS.parallel, savedir, step, net_="normal")
-                generate_class_samples(ema_model, FLAGS.parallel, savedir, step, net_="ema")
+                if FLAGS.cifar:
+                    generate_class_samples(net_model, FLAGS.parallel, savedir, step, net_="normal")
+                    generate_class_samples(ema_model, FLAGS.parallel, savedir, step, net_="ema")
+                else:
+                    generate_mnist_class_samples(net_model, FLAGS.parallel, savedir, step, net_="normal")
+                    # generate_mnist_class_samples(ema_model, FLAGS.parallel, savedir, step, net_="ema")
+
                 torch.save(
                     {
                         "net_model": net_model.state_dict(),
