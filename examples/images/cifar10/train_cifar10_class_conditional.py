@@ -45,6 +45,7 @@ flags.DEFINE_float("ema_decay", 0.9999, help="ema decay rate")
 flags.DEFINE_bool("parallel", False, help="multi gpu training")
 flags.DEFINE_integer("num_classes", 10, help="number of classes")
 flags.DEFINE_float("p_unlabeled", 0, help="ratio of unlabeled data")
+flags.DEFINE_bool("cifar", True, help="Use Cifar or Mnist")
 
 # Evaluation
 flags.DEFINE_integer(
@@ -56,6 +57,18 @@ flags.DEFINE_integer(
 
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda" if use_cuda else "cpu")
+
+class SemiSupervisedDataset(torch.utils.data.Dataset):
+    def __init__(self, dataset, p):
+        self._dataset = dataset
+        self.labels_filter = (torch.rand(len(dataset)) < p).int()
+
+    def __len__(self):
+        return len(self._dataset)
+
+    def __getitem__(self, idx):
+        item = self._dataset[idx]
+        return (item[0], item[1]*self.labels_filter[idx], idx)
 
 
 def warmup_lr(step):
@@ -73,18 +86,27 @@ def train(argv):
     )
 
     # DATASETS/DATALOADER
-    dataset = datasets.CIFAR10(
-        root="./data",
-        train=True,
-        download=True,
-        transform=transforms.Compose(
-            [
-                transforms.RandomHorizontalFlip(),
-                transforms.ToTensor(),
-                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-            ]
-        ),
-    )
+    if FLAGS.cifar:
+        dataset = datasets.CIFAR10(
+            root="./data",
+            train=True,
+            download=True,
+            transform=transforms.Compose(
+                [
+                    transforms.RandomHorizontalFlip(),
+                    transforms.ToTensor(),
+                    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+                ]
+            ),
+        )
+    else: 
+        dataset = datasets.MNIST(
+            "../data",
+            train=True,
+            download=True,
+            transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))]),
+        )
+    dataset = SemiSupervisedDataset(dataset, FLAGS.p_unlabeled)
     dataloader = torch.utils.data.DataLoader(
         dataset,
         batch_size=FLAGS.batch_size,
@@ -96,20 +118,25 @@ def train(argv):
     datalooper = infiniteloop_y(dataloader)
 
     # MODELS
-    net_model = UNetModelWrapper(
-        dim=(3, 32, 32),
-        num_res_blocks=2,
-        num_channels=FLAGS.num_channel,
-        channel_mult=[1, 2, 2, 2],
-        num_heads=4,
-        num_head_channels=64,
-        attention_resolutions="16",
-        dropout=0.1,
-        num_classes=FLAGS.num_classes,
-        class_cond=True
-    ).to(
-        device
-    )  # new dropout + bs of 128
+    if FLAGS.cifar:
+        net_model = UNetModelWrapper(
+            dim=(3, 32, 32),
+            num_res_blocks=2,
+            num_channels=FLAGS.num_channel,
+            channel_mult=[1, 2, 2, 2],
+            num_heads=4,
+            num_head_channels=64,
+            attention_resolutions="16",
+            dropout=0.1,
+            num_classes=FLAGS.num_classes,
+            class_cond=True
+        ).to(
+            device
+        )  # new dropout + bs of 128
+    else:
+        net_model = UNetModelWrapper(
+            dim=(1, 28, 28), num_channels=32, num_res_blocks=1, num_classes=10, class_cond=True
+        ).to(device)
 
     ema_model = copy.deepcopy(net_model)
     optim = torch.optim.Adam(net_model.parameters(), lr=FLAGS.lr)
@@ -156,8 +183,8 @@ def train(argv):
             x1 = x1.to(device)
             y = y.to(device)
             x0 = torch.randn_like(x1)
-            filter = np.random.random(y.shape) < FLAGS.p_unlabeled
-            y[filter] = FLAGS.num_classes
+            # filter = np.random.random(y.shape) < FLAGS.p_unlabeled
+            # y[filter] = FLAGS.num_classes
             t, xt, ut = FM.sample_location_and_conditional_flow(x0, x1)
             vt = net_model(t, xt, y)
             loss = torch.mean((vt - ut) ** 2)
