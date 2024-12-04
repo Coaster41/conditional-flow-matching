@@ -19,7 +19,7 @@ from torchdiffeq import odeint
 from torchdyn.core import NeuralODE
 
 from torchcfm.models.unet.unet import UNetModelWrapper
-from utils_cifar import generate_class_images, generate_mnist_class_images
+from utils_cifar import generate_class_images, generate_mnist_class_images, generate_mnist_class_samples
 
 FLAGS = flags.FLAGS
 # UNet
@@ -64,7 +64,7 @@ else:
 PATH = FLAGS.model_path
 print("path: ", PATH)
 checkpoint = torch.load(PATH, map_location=device)
-state_dict = checkpoint["ema_model"]
+state_dict = checkpoint["net_model"]
 try:
     new_net.load_state_dict(state_dict)
 except RuntimeError:
@@ -75,7 +75,6 @@ except RuntimeError:
         new_state_dict[k[7:]] = v
     new_net.load_state_dict(new_state_dict)
 new_net.eval()
-
 for class_to_gen in range(FLAGS.num_classes):
     images_gen = 0
     while images_gen < FLAGS.num_gen:
@@ -88,3 +87,5 @@ for class_to_gen in range(FLAGS.num_classes):
 
 
 
+# if FLAGS.mnist:
+#     generate_mnist_class_samples(new_net, False, FLAGS.save_dir, "","")
